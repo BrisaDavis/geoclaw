@@ -10,7 +10,7 @@ import numpy
 import nose
 
 import clawpack.geoclaw.topotools as topotools
-import clawpack.geoclaw.util as util
+import clawpack.clawutil.data
 
 # Set local test directory to get local files
 testdir = os.path.dirname(__file__)
@@ -111,7 +111,7 @@ def test_against_old():
     Test against the old topotools from 5.1.0.
     Compare bowl.tt1 to bowl_old.tt1
     """
-
+    
     import old_topotools
 
     nxpoints = 5
@@ -186,6 +186,50 @@ def test_read_write_topo_bowl_hill():
         shutil.rmtree(temp_path)
 
 
+def test_netcdf():
+    r"""Test NetCDF formatted topography reading"""
+
+    temp_path = tempfile.mkdtemp()
+
+    try:
+        # Fetch comparison data
+        url = "".join(('https://raw.githubusercontent.com/rjleveque/geoclaw/',
+                       '5f675256c043e59e5065f9f3b5bdd41c2901702c/src/python/',
+                       'geoclaw/tests/kahului_sample_1s.tt2'))
+        clawpack.clawutil.data.get_remote_file(url, output_dir=temp_path,
+            force=True)
+        
+        # Paths
+        local_path = os.path.join(temp_path, os.path.basename(url))
+        nc_path = os.path.join(temp_path, "test.nc")
+
+        # Write out NetCDF version of file
+        ascii_topo = topotools.Topography(path=local_path)
+        ascii_topo.read()
+        ascii_topo.write(nc_path, topo_type=4)
+
+        # Read back in NetCDF file
+        nc_topo = topotools.Topography(path=nc_path)
+        nc_topo.read()
+
+        # Compare arrays - use tolerance based on 30 arcsecond accuracy
+        assert numpy.allclose(ascii_topo.x, nc_topo.x), \
+                    "Flat x-arrays did not match."
+        assert numpy.allclose(ascii_topo.y, nc_topo.y), \
+                    "Flat y-arrays did not match."
+        assert numpy.allclose(ascii_topo.Z, nc_topo.Z), \
+                    "Flat y-arrays did not match."
+
+    except AssertionError as e:
+        shutil.copytree(temp_path, os.path.join(os.getcwd()),
+            'test_read_netcdf')
+        raise e
+    except ImportError as e:
+        raise nose.SkipTest("Skipping test since NetCDF support not found.")
+    finally:
+        shutil.rmtree(temp_path)
+
+
 def test_get_remote_file():
     """Test the ability to fetch a remote file from the web."""
     
@@ -195,7 +239,8 @@ def test_get_remote_file():
         url = "".join(('https://raw.githubusercontent.com/rjleveque/geoclaw/',
                        '5f675256c043e59e5065f9f3b5bdd41c2901702c/src/python/',
                        'geoclaw/tests/kahului_sample_1s.tt2'))
-        util.get_remote_file(url, output_dir=temp_path, force=True)
+        clawpack.clawutil.data.get_remote_file(url, output_dir=temp_path,
+            force=True)
 
         local_path = os.path.join(temp_path, os.path.basename(url))
         download_topo = topotools.Topography(path=local_path)
@@ -275,7 +320,12 @@ def plot_topo_bowl_hill():
     Create topo and write out, then read in again and plot.
     Note that center of bowl should be at (0,0).
     """
-    import matplotlib
+
+    try:
+        import matplotlib
+    except ImportError:
+        raise nose.SkipTest("Skipping test since matplotlib not found.")
+
     matplotlib.use("Agg")  # use image backend -- needed for Travis tests
     import matplotlib.pyplot as plt
 
@@ -307,7 +357,12 @@ def plot_kahului():
     In addition to using the Topography.plot function, also 
     illustrate how to do a contour data of the data directly.
     """
-    import matplotlib
+
+    try:
+        import matplotlib
+    except ImportError:
+        raise nose.SkipTest("Skipping test since matplotlib not found.")
+
     matplotlib.use("Agg")  # use image backend -- needed for Travis tests
     import matplotlib.pyplot as plt
 
@@ -354,8 +409,8 @@ def plot_kahului():
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         if "plot" in sys.argv[1].lower():
-            plot_topo_bowl_hill()
             plot_kahului()
+            plot_topo_bowl_hill()
             test_unstructured_topo(save=False, plot=True)
         elif bool(sys.argv[1]):
             test_unstructured_topo(save=True)
@@ -367,5 +422,6 @@ if __name__ == "__main__":
         test_read_write_topo_bowl_hill()
         test_get_remote_file()
         test_unstructured_topo()
+        test_netcdf()
 
         print "All tests passed."
